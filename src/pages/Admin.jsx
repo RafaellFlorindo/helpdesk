@@ -1,24 +1,26 @@
 import { useEffect, useMemo, useState } from 'react'
-import { supabase, STATUS_OPTIONS } from '../lib/supabase.js'
+import { supabase, STATUS_OPTIONS, categoriaLabel } from '../lib/supabase.js'
 import StatusBadge from '../components/StatusBadge.jsx'
+import PrioridadeBadge from '../components/PrioridadeBadge.jsx'
+import SlaBadge from '../components/SlaBadge.jsx'
 
 const FILTERS = [
-  { value: 'todos',       label: 'Todos' },
-  { value: 'novo',        label: 'Novo' },
-  { value: 'em_analise',  label: 'Em análise' },
-  { value: 'solucionado', label: 'Solucionado' },
-  { value: 'fechado',     label: 'Fechado' },
+  { value: 'todos',        label: 'Todos' },
+  { value: 'novo',         label: 'Novos' },
+  { value: 'em_analise',   label: 'Em Análise' },
+  { value: 'em_andamento', label: 'Em Andamento' },
+  { value: 'aguardando',   label: 'Aguardando' },
+  { value: 'solucionado',  label: 'Solucionados' },
+  { value: 'fechado',      label: 'Fechados' },
 ]
 
 function formatDate(iso) {
   if (!iso) return '-'
   try {
-    return new Date(iso).toLocaleString('pt-BR', {
+    return new Date(iso).toLocaleDateString('pt-BR', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
     })
   } catch {
     return iso
@@ -26,12 +28,12 @@ function formatDate(iso) {
 }
 
 export default function Admin() {
-  const [tickets, setTickets]       = useState([])
-  const [loading, setLoading]       = useState(true)
-  const [error,   setError]         = useState(null)
+  const [tickets, setTickets]           = useState([])
+  const [loading, setLoading]           = useState(true)
+  const [error,   setError]             = useState(null)
   const [statusFilter, setStatusFilter] = useState('todos')
-  const [search, setSearch]         = useState('')
-  const [updatingId, setUpdatingId] = useState(null)
+  const [search, setSearch]             = useState('')
+  const [updatingId, setUpdatingId]     = useState(null)
 
   async function fetchTickets() {
     setLoading(true)
@@ -92,14 +94,15 @@ export default function Admin() {
       const matchSearch =
         !term ||
         (t.email_cliente || '').toLowerCase().includes(term) ||
-        (t.titulo || '').toLowerCase().includes(term)
+        (t.titulo || '').toLowerCase().includes(term) ||
+        (t.numero_ticket || '').toLowerCase().includes(term)
       return matchStatus && matchSearch
     })
   }, [tickets, statusFilter, search])
 
   return (
     <div className="min-h-full p-4 sm:p-6">
-      <div className="mx-auto max-w-6xl">
+      <div className="mx-auto max-w-7xl">
         <header className="mb-6">
           <h1 className="text-2xl font-semibold text-gray-900">Painel de Tickets</h1>
           <p className="text-sm text-gray-500">Gerencie todos os chamados recebidos.</p>
@@ -130,7 +133,7 @@ export default function Admin() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por email ou título..."
+            placeholder="Buscar por ticket, email ou título..."
             className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 sm:max-w-xs"
           />
         </div>
@@ -147,29 +150,36 @@ export default function Admin() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Ticket</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Email</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Título</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Assunto</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Categoria</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Prioridade</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Status</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Alterar</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">SLA</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Aberto em</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 bg-white">
                 {loading ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-500">
+                    <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-500">
                       Carregando...
                     </td>
                   </tr>
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-500">
+                    <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-500">
                       Nenhum ticket encontrado.
                     </td>
                   </tr>
                 ) : (
                   filtered.map((t) => (
                     <tr key={t.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-sm font-medium text-indigo-600 whitespace-nowrap">
+                        {t.numero_ticket || '—'}
+                      </td>
                       <td className="px-4 py-3 text-sm text-gray-900">{t.email_cliente}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">
                         <div className="font-medium">{t.titulo}</div>
@@ -178,6 +188,12 @@ export default function Admin() {
                             {t.descricao}
                           </div>
                         )}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
+                        {categoriaLabel(t.categoria)}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <PrioridadeBadge prioridade={t.prioridade} />
                       </td>
                       <td className="px-4 py-3 text-sm">
                         <StatusBadge status={t.status} />
@@ -195,6 +211,13 @@ export default function Admin() {
                             </option>
                           ))}
                         </select>
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <SlaBadge
+                          deadline={t.sla_deadline}
+                          createdAt={t.created_at}
+                          status={t.status}
+                        />
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
                         {formatDate(t.created_at)}

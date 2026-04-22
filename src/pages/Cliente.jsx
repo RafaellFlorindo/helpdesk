@@ -1,17 +1,27 @@
-import { useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { supabase } from '../lib/supabase.js'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { supabase, categoriaLabel } from '../lib/supabase.js'
 import StatusBadge from '../components/StatusBadge.jsx'
+import PrioridadeBadge from '../components/PrioridadeBadge.jsx'
+import SlaBadge from '../components/SlaBadge.jsx'
+
+const FILTERS = [
+  { value: 'todos',        label: 'Todos' },
+  { value: 'novo',         label: 'Novos' },
+  { value: 'em_analise',   label: 'Em Análise' },
+  { value: 'em_andamento', label: 'Em Andamento' },
+  { value: 'aguardando',   label: 'Aguardando' },
+  { value: 'solucionado',  label: 'Solucionados' },
+  { value: 'fechado',      label: 'Fechados' },
+]
 
 function formatDate(iso) {
   if (!iso) return '-'
   try {
-    return new Date(iso).toLocaleString('pt-BR', {
+    return new Date(iso).toLocaleDateString('pt-BR', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
     })
   } catch {
     return iso
@@ -23,14 +33,10 @@ export default function Cliente() {
   const email = (searchParams.get('email') || '').trim()
   const nome  = (searchParams.get('nome')  || '').trim()
 
-  const [tickets, setTickets] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error,   setError]   = useState(null)
-
-  const [titulo, setTitulo]         = useState('')
-  const [descricao, setDescricao]   = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [successMsg, setSuccessMsg] = useState('')
+  const [tickets, setTickets]   = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [error,   setError]     = useState(null)
+  const [statusFilter, setStatusFilter] = useState('todos')
 
   async function fetchTickets() {
     if (!email) return
@@ -74,35 +80,11 @@ export default function Cliente() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [email])
 
-  async function handleSubmit(e) {
-    e.preventDefault()
-    setSuccessMsg('')
-    setError(null)
-
-    if (!titulo.trim()) {
-      setError('Informe um título para o ticket.')
-      return
-    }
-
-    setSubmitting(true)
-    const { error } = await supabase.from('tickets').insert({
-      email_cliente: email,
-      nome_cliente:  nome || null,
-      titulo:        titulo.trim(),
-      descricao:     descricao.trim() || null,
-      status:        'novo',
-    })
-    setSubmitting(false)
-
-    if (error) {
-      setError(error.message)
-      return
-    }
-    setTitulo('')
-    setDescricao('')
-    setSuccessMsg('Ticket aberto com sucesso!')
-    fetchTickets()
-  }
+  const filtered = useMemo(() => {
+    return tickets.filter(
+      (t) => statusFilter === 'todos' || t.status === statusFilter
+    )
+  }, [tickets, statusFilter])
 
   // Acesso inválido: sem email
   if (!email) {
@@ -119,104 +101,128 @@ export default function Cliente() {
     )
   }
 
+  const novoQuery = new URLSearchParams()
+  if (email) novoQuery.set('email', email)
+  if (nome)  novoQuery.set('nome',  nome)
+  const novoHref = `/cliente/novo${novoQuery.toString() ? `?${novoQuery}` : ''}`
+
   return (
     <div className="min-h-full p-4 sm:p-6">
-      <div className="mx-auto max-w-3xl space-y-6">
-        <header>
-          <h1 className="text-2xl font-semibold text-gray-900">Central de Atendimento</h1>
-          <p className="text-sm text-gray-500">
-            Logado como <span className="font-medium text-gray-700">{email}</span>
-          </p>
-        </header>
-
-        {/* Formulário de novo ticket */}
-        <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-4 text-lg font-semibold text-gray-900">Abrir novo ticket</h2>
-
-          {successMsg && (
-            <div className="mb-4 rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-700">
-              {successMsg}
-            </div>
-          )}
-          {error && (
-            <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-              {error}
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Título</label>
-              <input
-                type="text"
-                value={titulo}
-                onChange={(e) => setTitulo(e.target.value)}
-                maxLength={200}
-                required
-                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
-                placeholder="Descreva rapidamente o assunto"
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Descrição</label>
-              <textarea
-                value={descricao}
-                onChange={(e) => setDescricao(e.target.value)}
-                rows={5}
-                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
-                placeholder="Detalhe o que está acontecendo..."
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={submitting}
-              className="inline-flex items-center rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-gray-800 disabled:opacity-50"
-            >
-              {submitting ? 'Enviando...' : 'Abrir ticket'}
-            </button>
-          </form>
-        </section>
-
-        {/* Lista de tickets do cliente */}
-        <section className="rounded-lg border border-gray-200 bg-white shadow-sm">
-          <div className="border-b border-gray-200 px-5 py-3">
-            <h2 className="text-lg font-semibold text-gray-900">Meus tickets</h2>
+      <div className="mx-auto max-w-6xl">
+        {/* Cabeçalho */}
+        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold text-gray-900">Meus Tickets</h1>
+            <p className="text-sm text-gray-500">
+              Logado como <span className="font-medium text-gray-700">{email}</span>
+            </p>
           </div>
+          <Link
+            to={novoHref}
+            className="inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700"
+          >
+            Novo Ticket
+          </Link>
+        </div>
 
-          {loading ? (
-            <div className="p-6 text-center text-sm text-gray-500">Carregando...</div>
-          ) : tickets.length === 0 ? (
-            <div className="p-6 text-center text-sm text-gray-500">
-              Você ainda não abriu nenhum ticket.
-            </div>
-          ) : (
-            <ul className="divide-y divide-gray-200">
-              {tickets.map((t) => (
-                <li key={t.id} className="p-5">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <h3 className="text-sm font-semibold text-gray-900">{t.titulo}</h3>
-                      {t.descricao && (
-                        <p className="mt-1 text-sm text-gray-600 whitespace-pre-wrap break-words">
-                          {t.descricao}
-                        </p>
-                      )}
-                      <p className="mt-2 text-xs text-gray-400">
-                        Aberto em {formatDate(t.created_at)}
-                        {t.updated_at ? ` • Atualizado em ${formatDate(t.updated_at)}` : ''}
-                      </p>
-                    </div>
-                    <div className="shrink-0">
-                      <StatusBadge status={t.status} />
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        {/* Filtros */}
+        <div className="mb-4 flex flex-wrap gap-2">
+          {FILTERS.map((f) => {
+            const active = f.value === statusFilter
+            return (
+              <button
+                key={f.value}
+                onClick={() => setStatusFilter(f.value)}
+                className={`rounded-full px-3 py-1.5 text-sm font-medium ring-1 transition ${
+                  active
+                    ? 'bg-indigo-600 text-white ring-indigo-600'
+                    : 'bg-white text-gray-700 ring-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                {f.label}
+              </button>
+            )
+          })}
+        </div>
+
+        {error && (
+          <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
+        {/* Tabela */}
+        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Ticket</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Assunto</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Categoria</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Prioridade</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">SLA</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Aberto em</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 bg-white">
+                {loading ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500">
+                      Carregando...
+                    </td>
+                  </tr>
+                ) : filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500">
+                      Nenhum ticket encontrado.
+                    </td>
+                  </tr>
+                ) : (
+                  filtered.map((t) => (
+                    <tr key={t.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-sm font-medium text-indigo-600 whitespace-nowrap">
+                        {t.numero_ticket || '—'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-900">
+                        <div className="font-medium">{t.titulo}</div>
+                        {t.descricao && (
+                          <div className="mt-0.5 max-w-md truncate text-xs text-gray-500">
+                            {t.descricao}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
+                        {categoriaLabel(t.categoria)}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <PrioridadeBadge prioridade={t.prioridade} />
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <StatusBadge status={t.status} />
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <SlaBadge
+                          deadline={t.sla_deadline}
+                          createdAt={t.created_at}
+                          status={t.status}
+                        />
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
+                        {formatDate(t.created_at)}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <p className="mt-4 text-xs text-gray-400">
+          Mostrando {filtered.length} de {tickets.length} ticket(s).
+        </p>
       </div>
     </div>
   )
