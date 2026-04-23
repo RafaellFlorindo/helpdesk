@@ -30,23 +30,35 @@ function formatDate(iso) {
 
 export default function Cliente() {
   const [searchParams] = useSearchParams()
-  const email = (searchParams.get('email') || '').trim()
-  const nome  = (searchParams.get('nome')  || '').trim()
+  const email        = (searchParams.get('email')         || '').trim()
+  const nome         = (searchParams.get('nome')          || '').trim()
+  const locationId   = (searchParams.get('location_id')   || '').trim()
+  const locationName = (searchParams.get('location_name') || '').trim()
 
   const [tickets, setTickets]   = useState([])
   const [loading, setLoading]   = useState(true)
   const [error,   setError]     = useState(null)
   const [statusFilter, setStatusFilter] = useState('todos')
 
+  // Precisa ter pelo menos um dos dois pra identificar o escopo:
+  //  - location_id  -> modo GHL (isolamento por subconta)
+  //  - email        -> modo direto (sem GHL)
+  const hasScope = Boolean(locationId) || Boolean(email)
+
   async function fetchTickets() {
-    if (!email) return
+    if (!hasScope) return
     setLoading(true)
     setError(null)
-    const { data, error } = await supabase
-      .from('tickets')
-      .select('*')
-      .eq('email_cliente', email)
-      .order('created_at', { ascending: false })
+
+    let query = supabase.from('tickets').select('*')
+
+    if (locationId) {
+      query = query.eq('location_id', locationId)
+    } else if (email) {
+      query = query.eq('email_cliente', email)
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false })
 
     if (error) setError(error.message)
     else setTickets(data || [])
@@ -54,22 +66,26 @@ export default function Cliente() {
   }
 
   useEffect(() => {
-    if (!email) {
+    if (!hasScope) {
       setLoading(false)
       return
     }
     fetchTickets()
 
+    // Realtime: se estiver em modo GHL, escuta por location_id; senão, por email
+    const channelName = locationId
+      ? `tickets-loc-${locationId}`
+      : `tickets-cliente-${email}`
+
+    const filter = locationId
+      ? `location_id=eq.${locationId}`
+      : `email_cliente=eq.${email}`
+
     const channel = supabase
-      .channel(`tickets-cliente-${email}`)
+      .channel(channelName)
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'tickets',
-          filter: `email_cliente=eq.${email}`,
-        },
+        { event: '*', schema: 'public', table: 'tickets', filter },
         () => fetchTickets()
       )
       .subscribe()
@@ -78,7 +94,7 @@ export default function Cliente() {
       supabase.removeChannel(channel)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [email])
+  }, [locationId, email])
 
   const filtered = useMemo(() => {
     return tickets.filter(
@@ -86,25 +102,30 @@ export default function Cliente() {
     )
   }, [tickets, statusFilter])
 
-  // Acesso inválido: sem email
-  if (!email) {
+  // Acesso inválido: sem email nem location
+  if (!hasScope) {
     return (
       <div className="flex min-h-full items-center justify-center p-6">
         <div className="max-w-md rounded-lg border border-red-200 bg-red-50 p-6 text-center shadow-sm">
           <h1 className="text-lg font-semibold text-red-800">Acesso inválido</h1>
           <p className="mt-2 text-sm text-red-700">
-            Esta página precisa ser acessada com um email válido na URL.
-            Exemplo: <code className="rounded bg-red-100 px-1">?email=cliente@dominio.com</code>
+            Esta página precisa ser acessada com um email ou location_id na URL.
+          </p>
+          <p className="mt-2 text-xs text-red-600">
+            Ex GHL: <code className="rounded bg-red-100 px-1">?location_id={'{{location.id}}'}&amp;location_name={'{{location.name}}'}&amp;email={'{{user.email}}'}&amp;nome={'{{user.name}}'}</code>
           </p>
         </div>
       </div>
     )
   }
 
-  const novoQuery = new URLSearchParams()
-  if (email) novoQuery.set('email', email)
-  if (nome)  novoQuery.set('nome',  nome)
-  const novoHref = `/cliente/novo${novoQuery.toString() ? `?${novoQuery}` : ''}`
+  // Monta a query string pra propagar pros links internos
+  const propagated = new URLSearchParams()
+  if (email)        propagated.set('email',         email)
+  if (nome)         propagated.set('nome',          nome)
+  if (locationId)   propagated.set('location_id',   locationId)
+  if (locationName) propagated.set('location_name', locationName)
+  const novoHref = `/cliente/novo${propagated.toString() ? `?${propagated}` : ''}`
 
   return (
     <div className="min-h-full p-4 sm:p-6">
@@ -114,7 +135,17 @@ export default function Cliente() {
           <div>
             <h1 className="text-2xl font-semibold text-gray-900">Meus Tickets</h1>
             <p className="text-sm text-gray-500">
-              Logado como <span className="font-medium text-gray-700">{email}</span>
+              {locationName && (
+                <>
+                  Subconta <span className="font-medium text-gray-700">{locationName}</span>
+                  {email && ' · '}
+                </>
+              )}
+              {email && (
+                <>
+                  Logado como <span className="font-medium text-gray-700">{email}</span>
+                </>
+              )}
             </p>
           </div>
           <Link

@@ -1,5 +1,8 @@
 -- =============================================================
--- Helpdesk - Schema Supabase (v2)
+-- Helpdesk - Schema Supabase (v3)
+-- Inclui: numeração TK-AAAA-NNNN, categoria, prioridade, SLA,
+--         6 status e integração com subcontas (location_id/name)
+--         do GoHighLevel.
 -- Rode este SQL no SQL Editor do Supabase.
 -- Idempotente: pode rodar várias vezes sem quebrar nada.
 -- =============================================================
@@ -44,6 +47,8 @@ create table if not exists public.tickets (
                      'fechado'
                    )),
   sla_deadline    timestamptz,
+  location_id     text,
+  location_name   text,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz
 );
@@ -53,6 +58,8 @@ alter table public.tickets add column if not exists numero_ticket text unique;
 alter table public.tickets add column if not exists categoria     text;
 alter table public.tickets add column if not exists prioridade    text;
 alter table public.tickets add column if not exists sla_deadline  timestamptz;
+alter table public.tickets add column if not exists location_id   text;
+alter table public.tickets add column if not exists location_name text;
 
 -- Reaplica os CHECKs para cobrir tabelas antigas
 alter table public.tickets drop constraint if exists tickets_status_check;
@@ -75,6 +82,7 @@ create index if not exists tickets_numero_idx     on public.tickets (numero_tick
 create index if not exists tickets_categoria_idx  on public.tickets (categoria);
 create index if not exists tickets_prioridade_idx on public.tickets (prioridade);
 create index if not exists tickets_sla_idx        on public.tickets (sla_deadline);
+create index if not exists tickets_location_idx   on public.tickets (location_id);
 
 -- 5) Função / trigger: mantém updated_at sincronizado
 create or replace function public.set_updated_at()

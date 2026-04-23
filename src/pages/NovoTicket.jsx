@@ -8,8 +8,10 @@ import {
 
 export default function NovoTicket() {
   const [searchParams] = useSearchParams()
-  const email = (searchParams.get('email') || '').trim()
-  const nome  = (searchParams.get('nome')  || '').trim()
+  const email        = (searchParams.get('email')         || '').trim()
+  const nome         = (searchParams.get('nome')          || '').trim()
+  const locationId   = (searchParams.get('location_id')   || '').trim()
+  const locationName = (searchParams.get('location_name') || '').trim()
   const navigate = useNavigate()
 
   const [categoria,  setCategoria]  = useState('')
@@ -18,6 +20,8 @@ export default function NovoTicket() {
   const [descricao,  setDescricao]  = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error,      setError]      = useState(null)
+
+  const hasScope = Boolean(locationId) || Boolean(email)
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -29,8 +33,10 @@ export default function NovoTicket() {
 
     setSubmitting(true)
     const { error } = await supabase.from('tickets').insert({
-      email_cliente: email,
-      nome_cliente:  nome || null,
+      email_cliente: email || null,
+      nome_cliente:  nome  || null,
+      location_id:   locationId   || null,
+      location_name: locationName || null,
       titulo:        titulo.trim(),
       descricao:     descricao.trim() || null,
       categoria,
@@ -44,22 +50,23 @@ export default function NovoTicket() {
       return
     }
 
-    // Volta pra lista preservando email/nome
+    // Volta pra lista preservando contexto
     const q = new URLSearchParams()
-    if (email) q.set('email', email)
-    if (nome)  q.set('nome',  nome)
+    if (email)        q.set('email',         email)
+    if (nome)         q.set('nome',          nome)
+    if (locationId)   q.set('location_id',   locationId)
+    if (locationName) q.set('location_name', locationName)
     navigate(`/cliente${q.toString() ? `?${q}` : ''}`)
   }
 
-  // Acesso inválido: sem email
-  if (!email) {
+  // Acesso inválido
+  if (!hasScope) {
     return (
       <div className="flex min-h-full items-center justify-center p-6">
         <div className="max-w-md rounded-lg border border-red-200 bg-red-50 p-6 text-center shadow-sm">
           <h1 className="text-lg font-semibold text-red-800">Acesso inválido</h1>
           <p className="mt-2 text-sm text-red-700">
-            Esta página precisa ser acessada com um email válido na URL.
-            Exemplo: <code className="rounded bg-red-100 px-1">?email=cliente@dominio.com</code>
+            Esta página precisa de email ou location_id na URL.
           </p>
         </div>
       </div>
@@ -67,8 +74,10 @@ export default function NovoTicket() {
   }
 
   const backQuery = new URLSearchParams()
-  if (email) backQuery.set('email', email)
-  if (nome)  backQuery.set('nome',  nome)
+  if (email)        backQuery.set('email',         email)
+  if (nome)         backQuery.set('nome',          nome)
+  if (locationId)   backQuery.set('location_id',   locationId)
+  if (locationName) backQuery.set('location_name', locationName)
   const backHref = `/cliente${backQuery.toString() ? `?${backQuery}` : ''}`
 
   return (
@@ -83,7 +92,17 @@ export default function NovoTicket() {
 
         <h1 className="mb-1 text-2xl font-semibold text-gray-900">Novo Ticket de Suporte</h1>
         <p className="mb-6 text-sm text-gray-500">
-          Preencha os campos abaixo para abrir um chamado.
+          {locationName && (
+            <>
+              Subconta <span className="font-medium text-gray-700">{locationName}</span>
+              {email && ' · '}
+            </>
+          )}
+          {email && (
+            <>
+              Logado como <span className="font-medium text-gray-700">{email}</span>
+            </>
+          )}
         </p>
 
         <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">

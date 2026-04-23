@@ -32,6 +32,7 @@ export default function Admin() {
   const [loading, setLoading]           = useState(true)
   const [error,   setError]             = useState(null)
   const [statusFilter, setStatusFilter] = useState('todos')
+  const [locationFilter, setLocationFilter] = useState('todos')
   const [search, setSearch]             = useState('')
   const [updatingId, setUpdatingId]     = useState(null)
 
@@ -87,18 +88,36 @@ export default function Admin() {
     setUpdatingId(null)
   }
 
+  // Lista única de subcontas pros dropdown do filtro
+  const locations = useMemo(() => {
+    const map = new Map()
+    tickets.forEach((t) => {
+      if (t.location_id) {
+        // Guarda o nome mais recente pra cada location_id
+        map.set(t.location_id, t.location_name || t.location_id)
+      }
+    })
+    return Array.from(map, ([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [tickets])
+
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase()
     return tickets.filter((t) => {
       const matchStatus = statusFilter === 'todos' || t.status === statusFilter
+      const matchLocation =
+        locationFilter === 'todos' ||
+        (locationFilter === 'sem_location' && !t.location_id) ||
+        t.location_id === locationFilter
       const matchSearch =
         !term ||
-        (t.email_cliente || '').toLowerCase().includes(term) ||
-        (t.titulo || '').toLowerCase().includes(term) ||
-        (t.numero_ticket || '').toLowerCase().includes(term)
-      return matchStatus && matchSearch
+        (t.email_cliente  || '').toLowerCase().includes(term) ||
+        (t.titulo         || '').toLowerCase().includes(term) ||
+        (t.numero_ticket  || '').toLowerCase().includes(term) ||
+        (t.location_name  || '').toLowerCase().includes(term)
+      return matchStatus && matchLocation && matchSearch
     })
-  }, [tickets, statusFilter, search])
+  }, [tickets, statusFilter, locationFilter, search])
 
   return (
     <div className="min-h-full p-4 sm:p-6">
@@ -129,13 +148,28 @@ export default function Admin() {
             })}
           </div>
 
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por ticket, email ou título..."
-            className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 sm:max-w-xs"
-          />
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            {/* Filtro por subconta */}
+            <select
+              value={locationFilter}
+              onChange={(e) => setLocationFilter(e.target.value)}
+              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
+            >
+              <option value="todos">Todas as subcontas</option>
+              <option value="sem_location">Sem subconta</option>
+              {locations.map((loc) => (
+                <option key={loc.id} value={loc.id}>{loc.name}</option>
+              ))}
+            </select>
+
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por ticket, email, título..."
+              className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 sm:max-w-xs"
+            />
+          </div>
         </div>
 
         {error && (
@@ -151,6 +185,7 @@ export default function Admin() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Ticket</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Subconta</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Email</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Assunto</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Categoria</th>
@@ -164,13 +199,13 @@ export default function Admin() {
               <tbody className="divide-y divide-gray-200 bg-white">
                 {loading ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-500">
+                    <td colSpan={10} className="px-4 py-8 text-center text-sm text-gray-500">
                       Carregando...
                     </td>
                   </tr>
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-500">
+                    <td colSpan={10} className="px-4 py-8 text-center text-sm text-gray-500">
                       Nenhum ticket encontrado.
                     </td>
                   </tr>
@@ -179,6 +214,18 @@ export default function Admin() {
                     <tr key={t.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 text-sm font-medium text-indigo-600 whitespace-nowrap">
                         {t.numero_ticket || '—'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-700">
+                        {t.location_name ? (
+                          <div>
+                            <div className="font-medium">{t.location_name}</div>
+                            {t.location_id && (
+                              <div className="text-xs text-gray-400">{t.location_id}</div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-400">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-900">{t.email_cliente}</td>
                       <td className="px-4 py-3 text-sm text-gray-900">
