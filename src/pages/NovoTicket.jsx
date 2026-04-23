@@ -4,7 +4,49 @@ import {
   supabase,
   CATEGORIA_OPTIONS,
   PRIORIDADE_OPTIONS,
+  categoriaLabel,
+  prioridadeLabel,
+  statusLabel,
 } from '../lib/supabase.js'
+
+// Envia o payload do ticket pro Workflow GHL (Inbound Webhook).
+// A URL vem de VITE_GHL_WEBHOOK_URL (variável de ambiente da Vercel).
+// Falhas são silenciosas — webhook não pode bloquear a criação do ticket.
+async function enviarParaGhl(ticket) {
+  const url = import.meta.env.VITE_GHL_WEBHOOK_URL
+  if (!url) return // sem webhook configurado, pula
+
+  const payload = {
+    numero_ticket:    ticket.numero_ticket,
+    titulo:           ticket.titulo,
+    descricao:        ticket.descricao,
+    categoria:        ticket.categoria,
+    categoria_label:  categoriaLabel(ticket.categoria),
+    prioridade:       ticket.prioridade,
+    prioridade_label: prioridadeLabel(ticket.prioridade),
+    status:           ticket.status,
+    status_label:     statusLabel(ticket.status),
+    email_cliente:    ticket.email_cliente,
+    nome_cliente:     ticket.nome_cliente,
+    location_id:      ticket.location_id,
+    location_name:    ticket.location_name,
+    sla_deadline:     ticket.sla_deadline,
+    created_at:       ticket.created_at,
+    // Nome sugerido pra Opportunity no GHL (pode usar direto no workflow)
+    opportunity_name: `[${ticket.numero_ticket || 'NOVO'}] ${ticket.titulo}`,
+  }
+
+  try {
+    await fetch(url, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(payload),
+    })
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('[Ticket] Falha ao enviar webhook para GHL:', e)
+  }
+}
 
 export default function NovoTicket() {
   const [searchParams] = useSearchParams()
@@ -32,23 +74,34 @@ export default function NovoTicket() {
     if (!titulo.trim())   return setError('Informe o assunto do ticket.')
 
     setSubmitting(true)
-    const { error } = await supabase.from('tickets').insert({
-      email_cliente: email || null,
-      nome_cliente:  nome  || null,
-      location_id:   locationId   || null,
-      location_name: locationName || null,
-      titulo:        titulo.trim(),
-      descricao:     descricao.trim() || null,
-      categoria,
-      prioridade,
-      status:        'novo',
-    })
-    setSubmitting(false)
+    // .select() pra receber o ticket já com numero_ticket e sla_deadline
+    // gerados pela trigger — assim o webhook leva esses campos também.
+    const { data, error } = await supabase
+      .from('tickets')
+      .insert({
+        email_cliente: email || null,
+        nome_cliente:  nome  || null,
+        location_id:   locationId   || null,
+        location_name: locationName || null,
+        titulo:        titulo.trim(),
+        descricao:     descricao.trim() || null,
+        categoria,
+        prioridade,
+        status:        'novo',
+      })
+      .select()
+      .single()
 
     if (error) {
+      setSubmitting(false)
       setError(error.message)
       return
     }
+
+    // Dispara o webhook pro GHL em paralelo (não bloqueia navegação)
+    if (data) enviarParaGhl(data)
+
+    setSubmitting(false)
 
     // Volta pra lista preservando contexto
     const q = new URLSearchParams()
