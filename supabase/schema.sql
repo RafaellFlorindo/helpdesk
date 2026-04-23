@@ -1,8 +1,8 @@
 -- =============================================================
--- Helpdesk - Schema Supabase (v3)
+-- Helpdesk - Schema Supabase (v4)
 -- Inclui: numeração TK-AAAA-NNNN, categoria, prioridade, SLA,
---         6 status e integração com subcontas (location_id/name)
---         do GoHighLevel.
+--         6 status, integração com subcontas (location_id/name)
+--         do GoHighLevel e anexo de imagem opcional.
 -- Rode este SQL no SQL Editor do Supabase.
 -- Idempotente: pode rodar várias vezes sem quebrar nada.
 -- =============================================================
@@ -49,6 +49,7 @@ create table if not exists public.tickets (
   sla_deadline    timestamptz,
   location_id     text,
   location_name   text,
+  anexo_url       text,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz
 );
@@ -60,6 +61,7 @@ alter table public.tickets add column if not exists prioridade    text;
 alter table public.tickets add column if not exists sla_deadline  timestamptz;
 alter table public.tickets add column if not exists location_id   text;
 alter table public.tickets add column if not exists location_name text;
+alter table public.tickets add column if not exists anexo_url     text;
 
 -- Reaplica os CHECKs para cobrir tabelas antigas
 alter table public.tickets drop constraint if exists tickets_status_check;
@@ -172,7 +174,7 @@ begin
 end;
 $$;
 
--- 8) Row Level Security
+-- 8) Row Level Security (tabela)
 -- Como o app roda com a chave anon embedada no iframe do GHL, liberamos
 -- acesso com a chave anon. Ajuste conforme sua política de segurança.
 alter table public.tickets enable row level security;
@@ -185,7 +187,6 @@ create policy "tickets_anon_all"
   using (true)
   with check (true);
 
--- Também liberamos para usuários autenticados (se você usar auth no futuro)
 drop policy if exists "tickets_authenticated_all" on public.tickets;
 create policy "tickets_authenticated_all"
   on public.tickets
@@ -193,3 +194,28 @@ create policy "tickets_authenticated_all"
   to authenticated
   using (true)
   with check (true);
+
+-- 9) Storage - bucket de anexos das imagens dos tickets
+-- Cria o bucket (se já existir, não quebra) e aplica policies para permitir
+-- upload (INSERT) e leitura pública (SELECT) pelo role anon.
+-- OBS: o bucket também pode ser criado pelo dashboard em Storage > New bucket.
+
+insert into storage.buckets (id, name, public)
+values ('ticket-anexos', 'ticket-anexos', true)
+on conflict (id) do update set public = true;
+
+-- Policies do Storage
+-- Drop antes de criar pra ser idempotente
+drop policy if exists "ticket_anexos_anon_insert" on storage.objects;
+create policy "ticket_anexos_anon_insert"
+  on storage.objects
+  for insert
+  to anon, authenticated
+  with check (bucket_id = 'ticket-anexos');
+
+drop policy if exists "ticket_anexos_public_select" on storage.objects;
+create policy "ticket_anexos_public_select"
+  on storage.objects
+  for select
+  to anon, authenticated
+  using (bucket_id = 'ticket-anexos');
