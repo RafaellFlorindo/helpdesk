@@ -16,6 +16,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 })
 
 // -------- Status --------
+// 6 status espelhando os stages do pipeline do GHL.
+// Quando a Opportunity muda de stage no GHL, um webhook atualiza o ticket.
 export const STATUS_OPTIONS = [
   { value: 'novo',         label: 'Novo' },
   { value: 'em_analise',   label: 'Em análise' },

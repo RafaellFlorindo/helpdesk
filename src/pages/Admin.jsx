@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase, STATUS_OPTIONS, categoriaLabel } from '../lib/supabase.js'
 import StatusBadge from '../components/StatusBadge.jsx'
-import PrioridadeBadge from '../components/PrioridadeBadge.jsx'
-import SlaBadge from '../components/SlaBadge.jsx'
 
 const FILTERS = [
   { value: 'todos',        label: 'Todos' },
@@ -189,23 +187,21 @@ export default function Admin() {
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Email</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Assunto</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Categoria</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Prioridade</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Status</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Alterar</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">SLA</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600">Aberto em</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 bg-white">
                 {loading ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-8 text-center text-sm text-gray-500">
+                    <td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-500">
                       Carregando...
                     </td>
                   </tr>
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-8 text-center text-sm text-gray-500">
+                    <td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-500">
                       Nenhum ticket encontrado.
                     </td>
                   </tr>
@@ -240,9 +236,6 @@ export default function Admin() {
                         {categoriaLabel(t.categoria)}
                       </td>
                       <td className="px-4 py-3 text-sm">
-                        <PrioridadeBadge prioridade={t.prioridade} />
-                      </td>
-                      <td className="px-4 py-3 text-sm">
                         <StatusBadge status={t.status} />
                       </td>
                       <td className="px-4 py-3 text-sm">
@@ -258,13 +251,6 @@ export default function Admin() {
                             </option>
                           ))}
                         </select>
-                      </td>
-                      <td className="px-4 py-3 text-sm">
-                        <SlaBadge
-                          deadline={t.sla_deadline}
-                          createdAt={t.created_at}
-                          status={t.status}
-                        />
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
                         {formatDate(t.created_at)}
