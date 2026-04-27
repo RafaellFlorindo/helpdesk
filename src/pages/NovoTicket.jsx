@@ -2,8 +2,10 @@ import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase, CATEGORIA_OPTIONS } from '../lib/supabase.js'
 
-// Limite do anexo: 5 MB (ajuste aqui se quiser algo diferente).
+// Limite por imagem: 5 MB (ajuste aqui se quiser algo diferente).
 const ANEXO_MAX_BYTES = 5 * 1024 * 1024
+// Limite total de imagens por ticket.
+const ANEXO_MAX_COUNT = 6
 // Bucket do Supabase Storage onde as imagens ficam salvas.
 // Precisa existir (criado via dashboard) e ser público pra URL funcionar.
 const ANEXO_BUCKET = 'ticket-anexos'
@@ -16,43 +18,60 @@ export default function NovoTicket() {
   const locationName = (searchParams.get('location_name') || '').trim()
   const navigate = useNavigate()
 
-  const [categoria,    setCategoria]    = useState('')
-  const [titulo,       setTitulo]       = useState('')
-  const [descricao,    setDescricao]    = useState('')
-  const [anexo,        setAnexo]        = useState(null)
-  const [anexoPreview, setAnexoPreview] = useState(null)
-  const [submitting,   setSubmitting]   = useState(false)
-  const [error,        setError]        = useState(null)
+  const [categoria,  setCategoria]  = useState('')
+  const [titulo,     setTitulo]     = useState('')
+  const [descricao,  setDescricao]  = useState('')
+  // anexos: array de { id, file, preview }
+  const [anexos,     setAnexos]     = useState([])
+  const [submitting, setSubmitting] = useState(false)
+  const [error,      setError]      = useState(null)
 
   const hasScope = Boolean(locationId) || Boolean(email)
 
-  function handleFileChange(e) {
-    const file = e.target.files?.[0]
-    if (!file) {
-      setAnexo(null)
-      setAnexoPreview(null)
-      return
-    }
-    if (file.size > ANEXO_MAX_BYTES) {
-      setError('A imagem precisa ter menos de 5 MB.')
-      e.target.value = ''
-      return
-    }
-    setError(null)
-    setAnexo(file)
+  function handleFilesChange(e) {
+    const novos = Array.from(e.target.files || [])
+    e.target.value = '' // permite re-selecionar o mesmo arquivo
 
-    // Gera preview (base64) pra mostrar a miniatura antes do envio.
-    const reader = new FileReader()
-    reader.onloadend = () => setAnexoPreview(reader.result)
-    reader.readAsDataURL(file)
+    if (novos.length === 0) return
+
+    // Valida tamanho individual
+    const grande = novos.find((f) => f.size > ANEXO_MAX_BYTES)
+    if (grande) {
+      setError(`A imagem "${grande.name}" passa de 5 MB.`)
+      return
+    }
+
+    // Valida total
+    if (anexos.length + novos.length > ANEXO_MAX_COUNT) {
+      setError(`Máximo ${ANEXO_MAX_COUNT} imagens por ticket.`)
+      return
+    }
+
+    setError(null)
+
+    // Cria entradas com id único e preview vazio (vai sendo preenchido)
+    const items = novos.map((file) => ({
+      id:      `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      file,
+      preview: null,
+    }))
+
+    setAnexos((prev) => [...prev, ...items])
+
+    // Lê o preview de cada um (base64) e atualiza o estado quando cada um terminar
+    items.forEach((item) => {
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setAnexos((prev) =>
+          prev.map((a) => (a.id === item.id ? { ...a, preview: reader.result } : a)),
+        )
+      }
+      reader.readAsDataURL(item.file)
+    })
   }
 
-  function removerAnexo() {
-    setAnexo(null)
-    setAnexoPreview(null)
-    // Limpa o input file também (se não, não deixa re-selecionar o mesmo arquivo)
-    const input = document.getElementById('anexo-input')
-    if (input) input.value = ''
+  function removerAnexo(id) {
+    setAnexos((prev) => prev.filter((a) => a.id !== id))
   }
 
   async function handleSubmit(e) {
@@ -64,31 +83,34 @@ export default function NovoTicket() {
 
     setSubmitting(true)
 
-    // 1) Se tiver anexo, faz upload primeiro pra conseguir a URL pública.
-    let anexoUrl = null
-    if (anexo) {
-      const ext  = (anexo.name.split('.').pop() || 'jpg').toLowerCase()
+    // 1) Faz upload de cada anexo (se houver) e coleta as URLs públicas.
+    //    Múltiplas URLs ficam guardadas em anexo_url separadas por '\n'
+    //    (mantém compat com o GHL Note que insere o campo direto).
+    const urls = []
+    for (const item of anexos) {
+      const ext  = (item.file.name.split('.').pop() || 'jpg').toLowerCase()
       const safe = Math.random().toString(36).slice(2)
       const path = `${Date.now()}-${safe}.${ext}`
 
       const { error: upErr } = await supabase.storage
         .from(ANEXO_BUCKET)
-        .upload(path, anexo, {
-          contentType: anexo.type || 'image/jpeg',
+        .upload(path, item.file, {
+          contentType: item.file.type || 'image/jpeg',
           upsert:      false,
         })
 
       if (upErr) {
         setSubmitting(false)
-        setError('Erro ao enviar imagem: ' + upErr.message)
+        setError(`Erro ao enviar "${item.file.name}": ${upErr.message}`)
         return
       }
 
       const { data: urlData } = supabase.storage
         .from(ANEXO_BUCKET)
         .getPublicUrl(path)
-      anexoUrl = urlData.publicUrl
+      urls.push(urlData.publicUrl)
     }
+    const anexoUrl = urls.length > 0 ? urls.join('\n') : null
 
     // 2) Insere o ticket. Prioridade fica fixa em 'urgente' — todo cliente trata
     //    como urgente mesmo, então o campo some do form. Se precisar ajustar,
@@ -227,13 +249,13 @@ export default function NovoTicket() {
               />
             </div>
 
-            {/* Anexo / Imagem (opcional) */}
+            {/* Anexos / Imagens (opcional, múltiplas) */}
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">
-                Imagem <span className="text-gray-400">(opcional)</span>
+                Imagens <span className="text-gray-400">(opcional · até {ANEXO_MAX_COUNT})</span>
               </label>
 
-              {!anexoPreview ? (
+              {anexos.length === 0 ? (
                 <label
                   htmlFor="anexo-input"
                   className="flex cursor-pointer flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500 hover:border-indigo-400 hover:bg-indigo-50"
@@ -249,32 +271,67 @@ export default function NovoTicket() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5V18a2.25 2.25 0 002.25 2.25h13.5A2.25 2.25 0 0021 18v-1.5M16.5 12 12 7.5m0 0L7.5 12M12 7.5V18" />
                   </svg>
                   <span className="font-medium text-indigo-600">Clique para enviar</span>
-                  <span className="text-xs text-gray-400">PNG, JPG · máx 5 MB</span>
+                  <span className="text-xs text-gray-400">
+                    PNG, JPG · máx 5 MB cada · pode selecionar várias
+                  </span>
                 </label>
               ) : (
-                <div className="relative inline-block">
-                  <img
-                    src={anexoPreview}
-                    alt="Preview do anexo"
-                    className="max-h-48 rounded-md border border-gray-200 object-contain"
-                  />
-                  <button
-                    type="button"
-                    onClick={removerAnexo}
-                    className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white shadow hover:bg-red-600"
-                    aria-label="Remover imagem"
-                  >
-                    ×
-                  </button>
-                  <p className="mt-1 text-xs text-gray-500">{anexo?.name}</p>
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                  {anexos.map((a) => (
+                    <div
+                      key={a.id}
+                      className="group relative aspect-square overflow-hidden rounded-md border border-gray-200 bg-gray-50"
+                    >
+                      {a.preview ? (
+                        <img
+                          src={a.preview}
+                          alt={a.file.name}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-xs text-gray-400">
+                          ...
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => removerAnexo(a.id)}
+                        className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white shadow opacity-90 hover:bg-red-600"
+                        aria-label={`Remover ${a.file.name}`}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+
+                  {anexos.length < ANEXO_MAX_COUNT && (
+                    <label
+                      htmlFor="anexo-input"
+                      className="flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed border-gray-300 bg-gray-50 text-center text-xs text-gray-500 hover:border-indigo-400 hover:bg-indigo-50"
+                    >
+                      <span className="text-2xl leading-none text-gray-400">+</span>
+                      <span className="font-medium text-indigo-600">Adicionar</span>
+                    </label>
+                  )}
                 </div>
+              )}
+
+              {anexos.length > 0 && (
+                <p className="mt-2 text-xs text-gray-500">
+                  {anexos.length} {anexos.length === 1 ? 'imagem' : 'imagens'} ·
+                  {' '}
+                  {ANEXO_MAX_COUNT - anexos.length > 0
+                    ? `pode adicionar mais ${ANEXO_MAX_COUNT - anexos.length}`
+                    : 'limite atingido'}
+                </p>
               )}
 
               <input
                 id="anexo-input"
                 type="file"
                 accept="image/*"
-                onChange={handleFileChange}
+                multiple
+                onChange={handleFilesChange}
                 className="hidden"
               />
             </div>
